@@ -181,7 +181,7 @@ auto format(const std::type_info& tinfo) {
 }
 
 template<typename CONT>
-requires (requires (CONT x) { x.begin(), x.end(); })
+requires (requires (CONT x) { std::cout << format(*x.begin()) << format(*x.end()); })
 auto format(const CONT& cont) {
     std::stringstream out;
 
@@ -195,6 +195,7 @@ auto format(const CONT& cont) {
 }
 
 template<typename ...T>
+requires (requires (T ...x) { ((std::cout << format(x)) , ...); })
 void print(const T& ...things) {
     auto printer = [](const auto& thing) {
         std::cout << format(thing);

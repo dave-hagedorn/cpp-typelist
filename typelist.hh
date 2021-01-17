@@ -1,4 +1,4 @@
-#pragma once
+//#pragma once
 
 #include <type_traits>
 #include <utility>
@@ -39,7 +39,7 @@ template<typename ...OTHER>
     template<auto PREDICATE, auto I, typename LIST, typename FIRST, typename ...REST>
     static auto* filterImpl() {
         if constexpr (PREDICATE.template operator()<FIRST, I, LIST>()) {
-            using NEW = typename LIST::template append<FIRST>;
+            using NEW = typename LIST::template push_back<FIRST>;
             return filterImpl<PREDICATE, I+1, NEW, REST...>();
         } else {
             return filterImpl<PREDICATE, I+1, LIST, REST...>();
@@ -71,7 +71,7 @@ template<typename ...OTHER>
     template<auto PREDICATE, auto ...INDICES>
     static constexpr auto mapImpl(std::index_sequence<INDICES...>) {
         std::array result = {
-            PREDICATE.template operator()<INDICES, T>()...
+            PREDICATE.template operator()<INDICES, TYPES>()...
         };
 
         return result;
@@ -80,7 +80,7 @@ template<typename ...OTHER>
     template<auto PREDICATE, auto ...INDICES>
     static constexpr auto* mapTImpl(std::index_sequence<INDICES...>) {
         return static_cast<type_list<
-            decltype(PREDICATE.template operator()<INDICES, T>())...
+            decltype(PREDICATE.template operator()<INDICES, TYPES>())...
         >*>(nullptr);
     }
 
@@ -119,12 +119,12 @@ template<typename ...OTHER>
 
 
     template<typename OTHER>
-    constexpr static bool contains_one = (std::is_same_v<OTHER, T> || ...);
+    constexpr static bool contains_one = (std::is_same_v<OTHER, TYPES> || ...);
 public:
     /**
      * Size of this typelist - number of types it contains
      */
-    constexpr static std::size_t size = sizeof...(T);
+    constexpr static std::size_t size = sizeof...(TYPES);
 
     /**
      * std::index_sequence of the indices for this type list
@@ -136,19 +136,25 @@ public:
      * Evaluates to true if this list contains any of the specified types
      */
     template<typename ...OTHER>
-    constexpr static bool contains = (contains_one<OTHER> || ...);
+    constexpr static bool any_of = (contains_one<OTHER> || ...);
+
+    /**
+     * Evaluates to true if this list contains all of the specified types
+     */
+    template<typename ...OTHER>
+    constexpr static bool all_of = (contains_one<OTHER> && ...);    
 
     /**
      * Append the provided types to this list
      */
     template<typename ...OTHER>
-    using append = type_list<TYPES..., OTHER...>;
+    using push_back = type_list<TYPES..., OTHER...>;
 
     /**
      * Prepend the provided types to this list
      */
     template<typename ...OTHER>
-    using prepend = type_list<OTHER..., TYPES...>;
+    using push_front = type_list<OTHER..., TYPES...>;
 
     /**
      * Generate a new type_list by filtering the types in this list using the provided
@@ -169,25 +175,26 @@ public:
     using slice = std::remove_reference_t<decltype(*filterImpl<[]<typename TYPE, auto I, typename LIST>(){ return FROM <= I && I < TO; }, 0, type_list<>, TYPES...>())>;
 
     // using's without template arguments are OK to use other templated using aliases - these don't crash GCC
-    using dedupe = filter<[]<typename IT, std::size_t I, typename LIST>(){
-        return !LIST::template contains<IT>;
+    using unique = filter<[]<typename IT, std::size_t I, typename LIST>(){
+        return !LIST::template any_of<IT>;
     }>;
 
     template<auto PREDICATE>
     requires requires { PREDICATE.template operator()<0, int>(); }
-    using find = std::remove_pointer_t<decltype(findImpl<PREDICATE, 0, TYPES...>())>;
+    using find_if = std::remove_pointer_t<decltype(findImpl<PREDICATE, 0, TYPES...>())>;
 
     template<std::size_t INDEX>
     requires (INDEX < size)
     using at = std::remove_reference_t<decltype(*findImpl<[]<auto I, typename LIST>(){ return I == INDEX; }, 0, TYPES...>())>;
 
     template<auto PREDICATE>
-    static constexpr auto map = mapImpl<PREDICATE>(indices);
+    static constexpr auto transform_v = mapImpl<PREDICATE>(indices);
 
     template<auto PREDICATE>
-    using map_t = std::remove_reference_t<decltype(*mapTImpl<PREDICATE>(indices))>;
+    using transform = std::remove_reference_t<decltype(*mapTImpl<PREDICATE>(indices))>;
 
     template<auto PREDICATE = []<typename A, typename B>() { return sizeof(A) < sizeof(B); }>
+    requires requires { static_cast<bool>(PREDICATE.template operator()<int, int>()); }
     using sort = std::remove_reference_t<decltype(*sortImpl2<PREDICATE, false, TYPES...>(holder<>{}))>;
 
     template<template <typename ...> class AS>
@@ -244,13 +251,15 @@ void print(const T& ...things) {
 
 }
 
+namespace types = dhagedorn::types;
+
 int main() {
-    using list = type_list<int[1], int[2], int[3], char, char, int, int, float>;
+    using list = types::type_list<int[1], int[2], int[3], char, char, int, int, float>;
     using sorted = list::sort<>;
     using indexed = sorted::at<0>;
-    constexpr auto sizes = sorted::map<[]<auto I, typename T>(){ return sizeof(T); }>;
+    constexpr auto sizes = sorted::transform_v<[]<auto I, typename T>(){ return sizeof(T); }>;
     using variant = sorted::as<std::variant>;
-    using from = type_list<>::from<variant>;
+    using from = types::type_list<>::from<variant>;
 
     print("list: ", typeid(list));
     print("sorted by size: ", typeid(sorted));

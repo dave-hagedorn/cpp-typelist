@@ -1,11 +1,7 @@
 #include <type_traits>
-#include <cxxabi.h>
+
 #include <utility>
 #include <array>
-#include <memory>
-#include <fmt/core.h>
-#include <fmt/ranges.h>
-#include <variant>
 
 using no_type = struct no_type_t;
 
@@ -165,25 +161,62 @@ public:
     using from = std::remove_reference_t<decltype(*fromImpl(static_cast<TYPE*>(nullptr)))>;
 };
 
+
+#include <memory>
+#include <cxxabi.h>
+#include <variant>
+#include <iostream>
+#include <sstream>
+#include <cxxabi.h>
+
+auto format(const auto& anything) {
+    return anything;
+}
+
+auto format(const std::type_info& tinfo) {
+    auto demangled = abi::__cxa_demangle(tinfo.name(), nullptr, nullptr, nullptr);
+    std::string out = demangled;
+    free(demangled);
+    return out;
+}
+
+template<typename CONT>
+requires (requires (CONT x) { x.begin(), x.end(); })
+auto format(const CONT& cont) {
+    std::stringstream out;
+
+    for (const auto& e: cont) {
+        out << format(e) << ", ";
+    }
+
+    out.seekp(-2, std::ios_base::end);
+    out << '\0';
+    return out.str();
+}
+
+template<typename ...T>
+void print(const T& ...things) {
+    auto printer = [](const auto& thing) {
+        std::cout << format(thing);
+    };
+
+    ((printer(things)) , ...);
+    std::cout << std::endl;
+
+}
+
 int main() {
     using list = TypeList<int[1], int[2], int[3], char, char, int, int, float>;
     using sorted = list::sort<>;
     using indexed = sorted::at<0>;
     constexpr auto sizes = sorted::map<[]<auto I, typename T>(){ return sizeof(T); }>;
     using variant = sorted::as<std::variant>;
-    using from = TypeList<>::from<variant>;
+    using from = TypeList<>::from<variant>; 
 
-    auto printType = []<typename T>() {
-        std::unique_ptr<char> str{abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, nullptr)};
-        return std::string{str.get()};
-    };
-
-    fmt::print("begin\n");
-    fmt::print("sizes: {}\n", sizes);
-    fmt::print("list: {}\n", printType.operator()<list>());
-    fmt::print("sorted list: {}\n", printType.operator()<sorted>());
-    fmt::print("sorted[0]: {}\n", printType.operator()<indexed>());
-    fmt::print("variant<sorted>: {}\n", printType.operator()<variant>());
-    fmt::print("from<variant>: {}\n", printType.operator()<from>());
+    print("list: ", typeid(list));
+    print("sorted by size: ", typeid(sorted));
+    print("sizes of types in sorted: ", sizes);
+    print("sorted[0]: ", typeid(indexed));
+    print("into variant: ", typeid(variant));
+    print("from variant: ", typeid(from));
 }
-

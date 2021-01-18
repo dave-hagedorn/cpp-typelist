@@ -3,14 +3,38 @@
 #include <type_traits>
 #include <utility>
 #include <array>
+#include <concepts>
 
 namespace dhagedorn::types {
+
+template<auto PREDICATE>
+concept is_iter_predicate = requires {
+    { PREDICATE.template operator()<int, std::size_t{0}>() } -> std::convertible_to<bool>;
+};
+
+template<typename ...TYPES>
+struct type_list;
+
+template<auto PREDICATE>
+concept is_filter_predicate = requires {
+    { PREDICATE.template operator()<int, std::size_t{0}, type_list<>>() } -> std::convertible_to<bool>;
+};
+
+template<typename T>
+struct is_typelist_t: std::false_type {};
+
+template<typename ...TYPES>
+struct is_typelist_t<type_list<TYPES...>>: std::true_type {};
+
+template<typename T>
+concept is_typelist = is_typelist_t<T>::value;
+
 
 /**
  * Invalid type - used to indicate an empty/non-existent type
  * Ex - a type_list<>::find call that does not find a matching type
  */
-using no_type = struct no_type_t;
+struct no_type {};
 
 /**
  * Wrap a set of types into a dependant false value, for use with static_assert()'s
@@ -31,16 +55,16 @@ template<typename ...OTHER>
 
     };
 
-    template<auto PREDICATE, auto I, typename LIST>
+    template<auto PREDICATE, auto I, is_typelist LIST>
     static LIST* filterImpl() {
         return nullptr;
     }
 
-    template<auto PREDICATE, auto I, typename LIST, typename FIRST, typename ...REST>
+    template<auto PREDICATE, auto I, is_typelist LIST, typename FIRST, typename ...REST>
     static auto* filterImpl() {
         if constexpr (PREDICATE.template operator()<FIRST, I, LIST>()) {
-            using NEW = typename LIST::template push_back<FIRST>;
-            return filterImpl<PREDICATE, I+1, NEW, REST...>();
+            using NEW_LIST = typename LIST::template push_back<FIRST>;
+            return filterImpl<PREDICATE, I+1, NEW_LIST, REST...>();   
         } else {
             return filterImpl<PREDICATE, I+1, LIST, REST...>();
         }
@@ -117,9 +141,9 @@ template<typename ...OTHER>
         return static_cast<type_list<OTHER...>*>(nullptr);
     }
 
-
     template<typename OTHER>
-    constexpr static bool contains_one = (std::is_same_v<OTHER, TYPES> || ...);
+    constexpr static auto contains_one = ((std::is_same_v<OTHER, TYPES>) || ...);
+
 public:
     /**
      * Size of this typelist - number of types it contains
@@ -132,26 +156,47 @@ public:
      */
     constexpr static auto indices = std::make_index_sequence<size>();
 
-    /**
-     * Evaluates to true if this list contains any of the specified types
-     */
-    template<typename ...OTHER>
-    constexpr static bool any_of = (contains_one<OTHER> || ...);
+
 
     /**
-     * Evaluates to true if this list contains all of the specified types
+     * Evaluates to true if PREDICATE returns true for any type in this list
      */
-    template<typename ...OTHER>
-    constexpr static bool all_of = (contains_one<OTHER> && ...);    
+    template<auto PREDICATE>
+    requires (is_iter_predicate<PREDICATE>)
+    constexpr static bool any_of = []<auto ...I>(std::index_sequence<I...>){ 
+        return (PREDICATE.template operator()<I, TYPES>() || ...);
+    }(indices);
 
     /**
-     * Append the provided types to this list
+     * Evaluates to true if PREDICATE returns true for all types in this list
+     */
+    template<auto PREDICATE>
+    requires (is_iter_predicate<PREDICATE>)
+    constexpr static bool all_of = []<auto ...I>(std::index_sequence<I...>){ 
+        return (PREDICATE.template operator()<I, TYPES>() && ...);
+    }(indices);
+
+    /**
+     * Opposed of any_of
+     */
+    template<auto PREDICATE>
+    requires (is_iter_predicate<PREDICATE>)
+    constexpr static bool none_of = !any_of<PREDICATE>;
+
+    /**
+     * Evaluates to true if this type_list contains all of the types in OTHER
+     */
+    template<typename ...OTHER>
+    constexpr static auto contains = ((contains_one<OTHER> )&& ...); 
+
+    /**
+     * Append the provided types to this list, returning a new type_list
      */
     template<typename ...OTHER>
     using push_back = type_list<TYPES..., OTHER...>;
 
     /**
-     * Prepend the provided types to this list
+     * Prepend the provided types to this list, returning a new type_list
      */
     template<typename ...OTHER>
     using push_front = type_list<OTHER..., TYPES...>;
@@ -159,9 +204,9 @@ public:
     /**
      * Generate a new type_list by filtering the types in this list using the provided
      * predicate
-     * PREDICATE must have operator()<...>(); or <...>():
      */
     template<auto PREDICATE>
+    requires (is_filter_predicate<PREDICATE>)
     using filter = std::remove_pointer_t<decltype(filterImpl<PREDICATE, 0, type_list<>, TYPES...>())>;
 
     // calling filter<...> directly crashes gcc trunk regardless of how template<> using filter is defined
@@ -175,8 +220,8 @@ public:
     using slice = std::remove_reference_t<decltype(*filterImpl<[]<typename TYPE, auto I, typename LIST>(){ return FROM <= I && I < TO; }, 0, type_list<>, TYPES...>())>;
 
     // using's without template arguments are OK to use other templated using aliases - these don't crash GCC
-    using unique = filter<[]<typename IT, std::size_t I, typename LIST>(){
-        return !LIST::template any_of<IT>;
+    using set = filter<[]<typename IT, auto I, is_typelist LIST>(){
+        return !LIST::template contains<IT>;
     }>;
 
     template<auto PREDICATE>

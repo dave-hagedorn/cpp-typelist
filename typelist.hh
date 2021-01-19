@@ -1,4 +1,4 @@
-//#pragma once
+#pragma once
 
 #include <type_traits>
 #include <utility>
@@ -8,9 +8,17 @@
 namespace dhagedorn::types {
 
 template<auto PREDICATE>
-concept is_iter_predicate = requires {
+concept is_complex_iter_predicate = requires {
     { PREDICATE.template operator()<int, std::size_t{0}>() } -> std::convertible_to<bool>;
 };
+
+template<auto PREDICATE>
+concept is_simple_iter_predicate = requires {
+    { PREDICATE.template operator()<int>() } -> std::convertible_to<bool>;
+};
+
+template<auto PREDICATE>
+concept is_iter_predicate = is_simple_iter_predicate<PREDICATE> || is_complex_iter_predicate<PREDICATE>;
 
 template<typename ...TYPES>
 struct type_list;
@@ -21,8 +29,16 @@ concept is_complex_filter_predicate = requires {
 };
 
 template<auto PREDICATE>
-concept is_filter_predicate = requires {
+concept is_simple_filter_predicate = requires {
     { PREDICATE.template operator()<int>() } -> std::convertible_to<bool>;
+};
+
+template<auto PREDICATE>
+concept is_filter_predicate = is_simple_filter_predicate<PREDICATE> || is_complex_filter_predicate<PREDICATE>;
+
+template<auto PREDICATE>
+concept is_comp_predicate = requires {
+    { PREDICATE.template operator()<int, int>() } -> std::convertible_to<bool>;
 };
 
 template<typename T>
@@ -60,6 +76,27 @@ template<typename ...OTHER>
 
     };
 
+        template<typename OTHER>
+    constexpr static auto contains_one = ((std::is_same_v<OTHER, TYPES>) || ...);
+
+    template<auto PREDICATE, typename T, auto I>
+    constexpr static auto invoke_iter_predicate() {
+        if constexpr (is_simple_iter_predicate<PREDICATE>) {
+            return PREDICATE.template operator()<T>();
+        } else {
+            return PREDICATE.template operator()<T, I>();
+        }
+    }
+
+    template<auto PREDICATE, typename T, auto I, is_typelist LIST>
+    constexpr static auto invoke_filter_predicate() {
+        if constexpr (is_simple_filter_predicate<PREDICATE>) {
+            return PREDICATE.template operator()<T>();
+        } else {
+            return PREDICATE.template operator()<T, I, LIST>();
+        }
+    }    
+
     template<auto PREDICATE, auto I, is_typelist LIST>
     static LIST* filter_impl() {
         return nullptr;
@@ -67,13 +104,7 @@ template<typename ...OTHER>
 
     template<auto PREDICATE, auto I, is_typelist LIST, typename FIRST, typename ...REST>
     static auto* filter_impl() {
-        constexpr auto PASS = []{
-            if constexpr (is_complex_filter_predicate<PREDICATE>) {
-                return PREDICATE.template operator()<FIRST, I, LIST>();
-            } else {
-                return PREDICATE.template operator()<FIRST>();
-            }
-        }();
+        constexpr auto PASS = invoke_filter_predicate<PREDICATE, FIRST, I, LIST>();
 
         if constexpr (PASS) {
             using NEW_LIST = typename LIST::template push_back<FIRST>;
@@ -82,7 +113,6 @@ template<typename ...OTHER>
             } else {
                 return filter_impl<PREDICATE, I+1, NEW_LIST, REST...>();   
             }
-            
         } else {
             return filter_impl<PREDICATE, I+1, LIST, REST...>();
         }
@@ -95,7 +125,9 @@ template<typename ...OTHER>
 
     template<auto PREDICATE, auto I, typename FIRST, typename ...REST>
     static auto* find_if_impl() {
-        if constexpr (PREDICATE.template operator()<FIRST, I>()) {
+        constexpr auto PASS = invoke_iter_predicate<PREDICATE, FIRST, I>;
+
+        if constexpr (PASS) {
             return static_cast<FIRST*>(nullptr);
         } else {
             return find_if_impl<PREDICATE, I+1, REST...>();
@@ -105,7 +137,7 @@ template<typename ...OTHER>
     template<auto PREDICATE, auto ...INDICES>
     static constexpr auto transform_v_impl(std::index_sequence<INDICES...>) {
         std::array result = {
-            PREDICATE.template operator()<TYPES, INDICES>()...
+            invoke_iter_predicate<PREDICATE, TYPES, INDICES>()...
         };
 
         return result;
@@ -114,7 +146,7 @@ template<typename ...OTHER>
     template<auto PREDICATE, auto ...INDICES>
     static constexpr auto* transform_impl(std::index_sequence<INDICES...>) {
         return static_cast<type_list<
-            decltype(PREDICATE.template operator()<TYPES, INDICES>())...
+            decltype(invoke_iter_predicate<PREDICATE, TYPES, INDICES>())...
         >*>(nullptr);
     }
 
@@ -151,10 +183,15 @@ template<typename ...OTHER>
         return static_cast<type_list<OTHER...>*>(nullptr);
     }
 
-    template<typename OTHER>
-    constexpr static auto contains_one = ((std::is_same_v<OTHER, TYPES>) || ...);
-
 public:
+    /**
+     * Note - the weird form of std::remove_reference_t<decltype(*some_operation(...))>
+     * seems to work well on gcc 10.x
+     * The simpler std::remove_pointer_t<decltype(some_operation())>
+     * can crash the compiler if one using directive wraps another
+     * This seems to happen only for templated using directives with non-type-template parameters
+     */
+
     /**
      * Size of this typelist - number of types it contains
      */
@@ -170,27 +207,25 @@ public:
      * Evaluates to true if PREDICATE returns true for any type in this list
      */
     template<auto PREDICATE>
-    requires (
-        is_iter_predicate<PREDICATE>
-    )
+    requires is_iter_predicate<PREDICATE>
     constexpr static bool any_of = []<auto ...I>(std::index_sequence<I...>){ 
-        return (PREDICATE.template operator()<I, TYPES>() || ...);
+        return (invoke_iter_predicate<PREDICATE, TYPES, I>() || ...);
     }(indices);
 
     /**
      * Evaluates to true if PREDICATE returns true for all types in this list
      */
     template<auto PREDICATE>
-    requires (is_iter_predicate<PREDICATE>)
+    requires is_iter_predicate<PREDICATE>
     constexpr static bool all_of = []<auto ...I>(std::index_sequence<I...>){ 
-        return (PREDICATE.template operator()<I, TYPES>() && ...);
+        return (invoke_iter_predicate<PREDICATE, TYPES, I>() || ...);
     }(indices);
 
     /**
      * Opposite of any_of
      */
     template<auto PREDICATE>
-    requires (is_iter_predicate<PREDICATE>)
+    requires is_iter_predicate<PREDICATE>
     constexpr static bool none_of = !any_of<PREDICATE>;
 
     /**
@@ -216,21 +251,8 @@ public:
      * predicate PREDICATE<T>() or PREDICATE<T, INDEX, CURRENT_TYPE_LIST>()
      */
     template<auto PREDICATE>
-    requires (
-        is_filter_predicate<PREDICATE>
-        || is_complex_filter_predicate<PREDICATE>
-    )
-    using filter = std::remove_pointer_t<decltype(filter_impl<PREDICATE, 0, type_list<>, TYPES...>())>;
-
-    /**
-     * Generate a new type_list by taking the types with indices [FROM,TO)
-     * (typical slice operation)
-     * note:  The bizarre unwrapping below is because remove_pointer_t crashes on gcc trunk, and
-     *        calling directly as `filter<PREDICATE>;` also crashes gcc trunk
-     */
-    template<std::size_t FROM, std::size_t TO>
-    requires (FROM <= size && TO <= size && FROM < TO)
-    using slice = std::remove_reference_t<decltype(*filter_impl<[]<typename TYPE, auto I, typename LIST>(){ return FROM <= I && I < TO; }, 0, type_list<>, TYPES...>())>;
+    requires is_filter_predicate<PREDICATE>
+    using filter = std::remove_reference_t<decltype(*filter_impl<PREDICATE, 0, type_list<>, TYPES...>())>;
 
     /**
      * Generate a new type_list that is a set of this type_list - that is, no duplicate entries
@@ -240,6 +262,16 @@ public:
     using set = filter<[]<typename IT, auto I, is_typelist LIST>(){
         return !LIST::template contains<IT>;
     }>;
+
+    /**
+     * Generate a new type_list by taking the types with indices [FROM,TO)
+     * (typical slice operation)
+     * note:  The bizarre unwrapping below is because remove_pointer_t crashes on gcc trunk, and
+     *        calling directly as `filter<PREDICATE>;` also crashes gcc trunk
+     */
+    template<std::size_t FROM, std::size_t TO>
+    requires (FROM <= size && TO <= size && FROM < TO)
+    using slice = std::remove_reference_t<decltype(*filter_impl<[]<typename TYPE, auto I, typename LIST>(){ return FROM <= I && I < TO; }, 0, type_list<>, TYPES...>())>;    
 
     /**
      * Return the first type matching the provided PREDICATE
@@ -278,17 +310,26 @@ public:
     template<template <typename> class FROM>
     using transform = type_list<FROM<TYPES>...>;  
 
+    /**
+     * Stable sort - ascending
+     * PREDICATE must return `true` if A < B (strict weak ordering)
+     * defaults to sizeof(A) < sizeof(B)
+     */
     template<auto PREDICATE = []<typename A, typename B>() { return sizeof(A) < sizeof(B); }>
-    requires requires { static_cast<bool>(PREDICATE.template operator()<int, int>()); }
+    requires is_comp_predicate<PREDICATE>
     using sort = std::remove_reference_t<decltype(*sortImpl2<PREDICATE, false, TYPES...>(holder<>{}))>;
 
+    /**
+     * Inject the types in this list into the provided template class
+     * ex:  type_list::as<std::variant>;
+     */
     template<template <typename ...> class AS>
     using as = AS<TYPES...>;
 
-
-    template<auto PREDICATE>
-    using as_p  = type_list<decltype(PREDICATE.template operator()<TYPES>())...>;
-
+    /**
+     * Extrat the types from the provided template type, injecting
+     * them into a new type_list
+     */
     template<typename TYPE>
     using from = std::remove_reference_t<decltype(*fromImpl(static_cast<TYPE*>(nullptr)))>;
 };
@@ -343,17 +384,47 @@ void print(const T& ...things) {
 namespace types = dhagedorn::types;
 
 int main() {
-    using list = types::type_list<int[1], int[2], int[3], char, char, int, int, float>;
+    using list = types::type_list<double, float, int, char, int, char, float, double>;
+    constexpr auto size = list::size;
+    constexpr auto has_double = list::any_of<[]<typename T>(){ return std::is_same_v<T,double>; }>;
+    constexpr auto is_mathy = list::any_of<[]<typename T>(){ return std::is_integral_v<T> || std::is_floating_point_v<T>; }>;
+    constexpr auto is_not_stringy = list::none_of<[]<typename T>(){ return std::is_same_v<T, std::string>; }>;
+    constexpr auto has_int = list::contains<int>;
+    using with_string = list::push_back<std::string>;
+    using with_void = list::push_front<void>;
+    using set = list::set;
+    using no_floats = list::filter<[]<typename T>(){ return !std::is_floating_point_v<T>; }>;
+    using sliced = list::slice<0,3>;
+    using first_integral = list::find_if<[]<typename T>(){ return std::is_integral_v<T>; }>;
+    using first_type = list::at<0>;
+    constexpr auto sizes = list::transform_v<[]<typename T>(){ return sizeof(T); }>;
+    using pointy = list::transform_with<[]<typename T>() -> T* { return nullptr; }>;
+    using safe_pointy = list::transform<std::shared_ptr>;
     using sorted = list::sort<>;
-    using indexed = sorted::at<0>;
-    constexpr auto sizes = sorted::transform_v<[]<typename T, auto I>(){ return sizeof(T); }>;
-    using variant = sorted::as<std::variant>;
-    using from = types::type_list<>::from<variant>;
+    using sorted_backwards = list::sort<[]<typename A, typename B>(){ return sizeof(B) < sizeof(A); }>;
+    using variant = list::as<std::variant>;
+    using from_variant = list::from<variant>;
 
-    print("list: ", typeid(list));
-    print("sorted by size: ", typeid(sorted));
-    print("sizes of types in sorted: ", sizes);
-    print("sorted[0]: ", typeid(indexed));
-    print("into variant: ", typeid(variant));
-    print("from variant: ", typeid(from));
+
+    print("list:                ", typeid(list));
+    print("size:                ", size);
+    print("has_double:          ", has_double);
+    print("is_mathy:            ", is_mathy);
+    print("is_not_stringy:      ", is_not_stringy);
+    print("has_int:             ", has_int);
+    print("with_string:         ", typeid(with_string));
+    print("with_void:           ", typeid(with_void));
+    print("set:                 ", typeid(set));
+    print("no_floats:           ", typeid(no_floats));
+    print("sliced:              ", typeid(sliced));
+    print("first_integral:      ", typeid(first_integral));
+    print("first_type:          ", typeid(first_type));
+    print("sizes:               ", sizes);
+    print("pointy:              ", typeid(pointy));
+    print("safe_pointy:         ", typeid(safe_pointy));
+    print("sorted:              ", typeid(sorted));
+    print("sorted_backwards:    ", typeid(sorted_backwards));
+    print("variant:             ", typeid(variant));
+    print("from_variant:        ", typeid(from_variant));
+
 }

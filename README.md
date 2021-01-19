@@ -8,19 +8,19 @@ that evaluate directly to new types, typelists, or constexpr values.
 Rather than typing, say 
 
 ```c++
-using only_ints = decltype(some_typelist::filter([](auto& tag) { return std::is_integral_v<decltype(tag)>; }))
+using only_ints = decltype(some_typelist<TYPES...>::filter([](auto& tag) { return std::is_integral_v<decltype(tag)>; }))
 ```
 
 you can now type 
 
 ```c++
-using only_ints = typelist::filter<[]<typename T>() { return std::is_integral_v<T>; }>;
+using only_ints = typelist<TYPES...>::filter<[]<typename T>() { return std::is_integral_v<T>; }>;
 ```
 
 This allows chaining operations: 
 
 ```c++
-using only_pointy_ints = typelist
+using only_pointy_ints = typelist<TYPES...>
     ::filter<[]<typename T>() { return std::is_integral_v<T>; }>
     ::transform_with<[]<typename T>() -> T* {}>;
 ```

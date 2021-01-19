@@ -25,7 +25,9 @@ using only_pointy_ints = typelist<TYPES...>
     ::transform_with<[]<typename T>() -> T* {}>;
 ```
 
-# Small Example
+See [sample.cc](sample.cc).
+
+#### Ex - Generate a variant, with no duplicate types, that holds any value from a tuple
 ```c++
 #include <tuple>
 #include <utility>
@@ -62,7 +64,7 @@ record row{"a", 1, "b", 2};
 std::string value = std::get<std::string>(tuple_runtime_get(0, row));
 ```
 
-# Complete Example
+#### Complete API
 
 ```c++
 using list = types::typelist<double, float, int, char, int, char, float, double>;
@@ -87,5 +89,32 @@ using sorted = list::sort<>;
 using sorted_backwards = list::sort<[]<typename A, typename B>(){ return sizeof(B) < sizeof(A); }>;
 using variant = list::as<std::variant>;
 using from_variant = list::from<variant>;
+```
+
+Evaluates to:
+
+```c++
+list:                dhagedorn::types::typelist<double, float, int, char, int, char, float, double>
+size:                8
+has_double:          1
+is_mathy:            1
+is_not_stringy:      1
+has_int:             1
+with_string:         dhagedorn::types::typelist<double, float, int, char, int, char, float, double, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >
+with_void:           dhagedorn::types::typelist<void, double, float, int, char, int, char, float, double>
+set:                 dhagedorn::types::typelist<double, float, int, char>
+no_floats:           dhagedorn::types::typelist<int, char, int, char>
+odds:                dhagedorn::types::typelist<float, char, char, double>
+sliced:              dhagedorn::types::typelist<double, float, int>
+first_integral:      double
+first_type:          double
+sizes:               8, 4, 4, 1, 4, 1, 4, 8 
+indices:             0, 1, 2, 3, 4, 5, 6, 7 
+pointy:              dhagedorn::types::typelist<double*, float*, int*, char*, int*, char*, float*, double*>
+safe_pointy:         dhagedorn::types::typelist<std::shared_ptr<double>, std::shared_ptr<float>, std::shared_ptr<int>, std::shared_ptr<char>, std::shared_ptr<int>, std::shared_ptr<char>, std::shared_ptr<float>, std::shared_ptr<double> >
+sorted:              dhagedorn::types::typelist<char, char, float, int, int, float, double, double>
+sorted_backwards:    dhagedorn::types::typelist<double, double, float, int, int, float, char, char>
+variant:             std::variant<double, float, int, char, int, char, float, double>
+from_variant:        dhagedorn::types::typelist<double, float, int, char, int, char, float, double>
 ```
 

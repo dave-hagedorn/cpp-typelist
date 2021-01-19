@@ -2,7 +2,7 @@
 
 A functional-style typelist for C++20.
 
-Lambdas are passed as predicates to algorithms (filter, transform, find_if, etc.)
+Lambdas are used as predicates to algorithms (filter, transform, find_if, etc.)
 that evaluate directly to new types, typelists, or constexpr values.
 
 Rather than typing, say 
@@ -26,6 +26,58 @@ using only_pointy_ints = typelist<TYPES...>
 ```
 
 See [sample.cc](sample.cc).
+
+#### Use
+
+Create a typelist with `using tl = typelist<TYPE 1, TYPE 2, ...>;`.
+
+#### Moving to and from a typelist
+
+Create a typelist by extracting the types from another type using `from`: `using tl = typelist<>::from<variant<int, float, double>>;`.
+
+Can convert a typelist to a usable type using `as`: `using numbers = typelist<int, float, double>::as<std::variant>;`
+
+#### Algorithms
+
+Supported algorithms are: `any_of, all_of, none_of, filter, sort, find_if, contains, and transform/transfor_with/transform_v`
+
+I've tried to follow names from the STL and the excellent [range-v3](https://github.com/ericniebler/range-v3).
+
+Most algorithms take an `iter_predicate` of form: `[]<typename T>(){ return /** some true/false based on T */; }`<br>
+Ex: `using aligned_types = typelist<int, float, double>::filter<[]<typename T>(){ return sizeof(T) % 4 == 0; }`<br>
+An overloaded form of `[]<typename T, std::size_t I>(){ ...; }` can also be used.
+
+`filter` takes a `filter_predicate` of `[]<typename T>(){ ... }`.<br>
+An overloaded form of `[]<typename T, std::size_t I, is_typelist CURRENT_LIST>{ ... }` is also allowed.<br>
+`CURRENT_TYPELIST` is the current filtered list.<br>
+See `set` for an example of this use
+
+`transform` takes a target type, converting each type in the list into that type:<br> 
+`using pointy_numbers = typelist<int, float, double>::transform<std::shared_ptr>`
+
+`transform_with` takes a lambda and uses its output type as the target type.<br>
+This allows building conversion expressions, such as:<br>
+`using unsafe_pointye_ints = typelist<int, float, double>::transform_with<typename T>() -> T* {}> // typelist<int*, float*, double*>`
+
+`transform_v` transforms the list into a value using an `iter_predicate`, emitting a std::array:<br>
+`constexpr std::array sizes = typelist<int, float, double>::transform_v<[]<typename T>{ return sizeof(T); >`
+
+`sort` takes a lambda comparing two types with strict weak ordering (A < B).<br>
+`sort<>` is equivalent to calling:<br>
+`using sorted = typelist<int, float, double>::sort<[]<typename A, typename B>(){ return sizeof(A) < sizeof(B); }`
+
+#### Utilities
+
+A typelist can be converted into a set using `typelist<>::set`.<br>
+This is useful with `std::variant` for example, where duplicate types are supported by difficult to use.
+
+Indexing into a typelist is done with `::at<I>`
+
+Slice a list with `::slice<I1, I2>`
+
+The size of the list is `::size`
+
+Append or prepend types to a typelist using `::push_back<T>` and `::push_front<T>`
 
 #### Ex - Generate a variant, with no duplicate types, that holds any value from a tuple
 ```c++

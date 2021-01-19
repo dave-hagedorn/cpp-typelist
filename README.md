@@ -31,12 +31,16 @@ using only_pointy_ints = typelist
 #include <utility>
 #include <variant>
 
-#include "typelist"
+#include "typelist.hh"
 
 using namespace dhagedorn::types;
 
 using record = std::tuple<std::string, int, std::string, int>;
-using record_field = typelist<>::from<record>::set::push_front<std::monostate>::as<std::variant>; // std::variant<std::monostate, std::string, int>
+using record_field = typelist<>
+    ::from<record>
+    ::set
+    ::push_front<std::monostate>
+    ::as<std::variant>; // std::variant<std::monostate, std::string, int>
 
 record_field tuple_runtime_get(std::size_t index, const std::tuple& rec) {
     record_field out;
@@ -53,6 +57,9 @@ record_field tuple_runtime_get(std::size_t index, const std::tuple& rec) {
 
     return out;
 }
+
+record row{"a", 1, "b", 2};
+std::string value = std::get<std::string>(tuple_runtime_get(0, row));
 ```
 
 # Complete Example

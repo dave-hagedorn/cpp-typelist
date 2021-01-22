@@ -2,6 +2,7 @@
 
 ```c++
 #include <tuple>
+#include <string>
 #include <utility>
 #include <variant>
 
@@ -23,7 +24,7 @@ Requires a C++20 compiler.  GCC 10.1.0 and newer are known to work
 
 ### Use
 
-Create a typelist with"
+Create a typelist with
 
 ```c++
 using tl = typelist<TYPE 1, TYPE 2, ...>;

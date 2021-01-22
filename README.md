@@ -1,85 +1,187 @@
 # cpp-typelist
 
+```c++
+#include <tuple>
+#include <utility>
+#include <variant>
+
+#include "dhagedorn/types/typelist.hh"
+
+using namespace dhagedorn::types;
+
+using record_t = std::tuple<std::string, int, std::string, int>;
+using record_field_t = typelist<>
+    ::from<record>
+    ::set
+    ::push_front<std::monostate>
+    ::as<std::variant>; // std::variant<std::monostate, std::string, int>
+```
+
 A functional-style typelist for C++20.
 
-Lambdas are used as predicates to algorithms (filter, transform, find_if, etc.)
-that evaluate directly to new types, typelists, or constexpr values.
+Requires a C++20 compiler.  GCC 10.1.0 and newer are known to work
 
-Rather than typing, say 
+### Use
 
-```c++
-using only_ints = decltype(some_typelist<TYPES...>::filter([](auto& tag) { return std::is_integral_v<decltype(tag)>; }))
-```
-
-you can now type 
+Create a typelist with"
 
 ```c++
-using only_ints = typelist<TYPES...>::filter<[]<typename T>() { return std::is_integral_v<T>; }>;
+using tl = typelist<TYPE 1, TYPE 2, ...>;
 ```
 
-This allows chaining operations: 
+### Moving types in and out of a typelist
 
+Create a typelist by extracting the types from another type with `from`:
 ```c++
-using only_pointy_ints = typelist<TYPES...>
-    ::filter<[]<typename T>() { return std::is_integral_v<T>; }>
-    ::transform_with<[]<typename T>() -> T* {}>;
+using number = std::variant<int, float, double>;
+using number_types = typelist<>::from<number>;
+// typelist<int, float, double>
 ```
 
-See [sample.cc](sample.cc).
+Convert a typelist to a usable type with `as`:
+```c++
+using number_types = typelist<>::from<number>;
+using number = typelist<number_types>::as<std::variant>;
+// std::variant<int, float, double>
+```
 
-#### Use
+### Modifying a typelist
 
-Create a typelist with `using tl = typelist<TYPE 1, TYPE 2, ...>;`.
-
-#### Moving to and from a typelist
-
-Create a typelist by extracting the types from another type using `from`: `using tl = typelist<>::from<variant<int, float, double>>;`.
-
-Can convert a typelist to a usable type using `as`: `using numbers = typelist<int, float, double>::as<std::variant>;`
-
-#### Algorithms
-
-Supported algorithms are: `any_of, all_of, none_of, filter, sort, find_if, contains, and transform/transfor_with/transform_v`
+Supported operations are:
+```
+any_of
+all_of
+none_of
+find_if
+filter
+contains
+sort
+transform
+transform_with
+transform_v
+set
+push_back
+push_front
+```
 
 I've tried to follow names from the STL and the excellent [range-v3](https://github.com/ericniebler/range-v3).
 
-Most algorithms take an `iter_predicate` of form: `[]<typename T>(){ return /** some true/false based on T */; }`<br>
-Ex: `using aligned_types = typelist<int, float, double>::filter<[]<typename T>(){ return sizeof(T) % 4 == 0; }`<br>
-An overloaded form of `[]<typename T, std::size_t I>(){ ...; }` can also be used.
+Unless otherwise stated, all algorithms accept a predicate of type `iter_predicate`:
+```c++
+[]<typename T>(){ return /** true/false based on T */; }`
+```
 
-`filter` takes a `filter_predicate` of `[]<typename T>(){ ... }`.<br>
-An overloaded form of `[]<typename T, std::size_t I, is_typelist CURRENT_LIST>{ ... }` is also allowed.<br>
-`CURRENT_TYPELIST` is the current filtered list.<br>
-See `set` for an example of this use
+An overloaded form is also available:
+```c++
+[]<typename T, std::size_t /*or auto*/ I>(){ ...; }
+```
 
-`transform` takes a target type, converting each type in the list into that type:<br> 
-`using pointy_numbers = typelist<int, float, double>::transform<std::shared_ptr>`
+### any_of, all_of, none_of
 
-`transform_with` takes a lambda and uses its output type as the target type.<br>
-This allows building conversion expressions, such as:<br>
-`using unsafe_pointye_ints = typelist<int, float, double>::transform_with<typename T>() -> T* {}> // typelist<int*, float*, double*>`
+Equivalents of the [std library's](https://en.cppreference.com/w/cpp/algorithm/all_any_none_of)
 
-`transform_v` transforms the list into a value using an `iter_predicate`, emitting a std::array:<br>
-`constexpr std::array sizes = typelist<int, float, double>::transform_v<[]<typename T>{ return sizeof(T); >`
+```c++
+constexpr auto is_integral = typelist<int, float, char*>
+    ::any_of<[]<typename T>(){ return std::is_integral_v<T>; }>;
+    // true
+```
 
-`sort` takes a lambda comparing two types with strict weak ordering (A < B).<br>
-`sort<>` is equivalent to calling:<br>
-`using sorted = typelist<int, float, double>::sort<[]<typename A, typename B>(){ return sizeof(A) < sizeof(B); }`
+### find_if
 
-#### Utilities
+Equivalent to std library's [find_if](https://en.cppreference.com/w/cpp/algorithm/find)
 
-A typelist can be converted into a set using `typelist<>::set`.<br>
-This is useful with `std::variant` for example, where duplicate types are supported by difficult to use.
+```c++
+using is_floating_point = typelist<int, float, char*>
+    ::find_if<[]<typename T>(){ return std::is_floating_point<T>; }>;
+    // float
+```
 
-Indexing into a typelist is done with `::at<I>`
+### filter
 
-Slice a list with `::slice<I1, I2>`
+Filter out unwanted types:
 
-The size of the list is `::size`
+```c++
+using only_numeric = typelist<int, float, char*>
+    ::filter<[]<typename T>(){ return std::is_numeric_v<T>; }>;
+    // typelist<int>
+```
 
-Append or prepend types to a typelist using `::push_back<T>` and `::push_front<T>`
+An overloaded predicate can also be used:
+```c++
+[]<typename T, std::size_t I, is_typelist CURRENT_LIST>[]( ...; )
+```
 
-#### Ex - Generate a variant, with no duplicate types, that holds any value from a tuple
+`CURRENT_LIST` is the current value of the filtered output list.<br>
+This can be used to implement more complex filters.<br>
+See `set` for an example.
+
+### contains
+
+True if the list contains the provied type:
+
+```c++
+constexpr auto has_int = typelist<int, float, char*>
+    ::contains<int>
+    // true
+```
+
+### sort
+
+Sorts the typelist using a predicate implementing [strict weak ordering](https://en.cppreference.com/w/cpp/concepts/strict_weak_order):
+
+```c++
+[]<typename A, typename B>(){ return sizeof(A) < sizeof(B); }
+```
+
+`sort<>` is equivalent to calling:
+```c++
+using sorted = typelist<int, float, char*>::sort<[]<typename A, typename B>(){ return sizeof(A) < sizeof(B); }
+// typelist<float, int, char*>
+// (assuming 32 bit float, 64 bit int and pointers)
+```
+### transform, transform_with, transform_v
+
+Convert one list into another
+
+`transform` expects a target templated type:
+
+```c++
+using pointy_types = typelist<int, float, char*>
+    ::transform<std::shared_ptr>`
+    // typelist<shared_ptr<int>, shared_ptr<float>, shared_ptr<char>>
+```
+
+`transform_with` uses the return type of its predicate as
+an expression to generate the new type:
+
+```c++
+using unsafe_pointy_ints = typelist<int, float, char*>
+    ::transform_with<typename T>() -> T* {}>
+    // typelist<int*, float*, char**>
+```
+`transform_v` converts the typelist into a std::array:
+
+```c++
+constexpr std::array sizes = typelist<int, float, char*>
+    ::transform_v<[]<typename T>{ return sizeof(T); }>
+    // std::array{ 4, 4, 8 }
+```
+
+### set
+
+Generates a set (no duplicate types):
+
+```c++
+using record = std::tuple<int, float, char*, char*, float, int>;
+using any_tuple_value = typelist<>
+    ::from<record>
+    ::set
+    ::push_back<std::monostate>
+    ::as<std::variant>
+    // std::variant<std::monostate, int, float, char*>
+```
+
+### Ex - Generate a variant, with no duplicate types, that holds any value from a tuple
 ```c++
 #include <tuple>
 #include <utility>
@@ -98,14 +200,14 @@ using record_field = typelist<>
 
 record_field tuple_runtime_get(std::size_t index, const std::tuple& rec) {
     record_field out;
-    
+
     [&]<auto ...INDICES>(std::index_sequence<INDICES...>) {
         auto test_element = [&]<auto I>() {
             if (index == I) {
                 out = std::get<I>(rec);
             }
         };
-        
+
         ((test_element.template operator()<INDICES>()) , ...);
     }(std::make_index_sequence<std::tuple_size_v<record>>());
 
@@ -116,7 +218,9 @@ record row{"a", 1, "b", 2};
 std::string value = std::get<std::string>(tuple_runtime_get(0, row));
 ```
 
-#### Complete API
+### API Samples
+
+see [sample.cc](sample/sample.cc)
 
 ```c++
 using list = types::typelist<double, float, int, char, int, char, float, double>;
@@ -160,8 +264,8 @@ odds:                dhagedorn::types::typelist<float, char, char, double>
 sliced:              dhagedorn::types::typelist<double, float, int>
 first_integral:      double
 first_type:          double
-sizes:               8, 4, 4, 1, 4, 1, 4, 8 
-indices:             0, 1, 2, 3, 4, 5, 6, 7 
+sizes:               8, 4, 4, 1, 4, 1, 4, 8
+indices:             0, 1, 2, 3, 4, 5, 6, 7
 pointy:              dhagedorn::types::typelist<double*, float*, int*, char*, int*, char*, float*, double*>
 safe_pointy:         dhagedorn::types::typelist<std::shared_ptr<double>, std::shared_ptr<float>, std::shared_ptr<int>, std::shared_ptr<char>, std::shared_ptr<int>, std::shared_ptr<char>, std::shared_ptr<float>, std::shared_ptr<double> >
 sorted:              dhagedorn::types::typelist<char, char, float, int, int, float, double, double>

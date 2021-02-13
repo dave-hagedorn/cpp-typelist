@@ -35,10 +35,11 @@
 #include <memory>
 #include <variant>
 #include <sstream>
+#include <type_traits>
 
 #include "dhagedorn/types/typelist.hh"
 
-auto format(const auto& anything) {
+const auto& format(const auto& anything) {
     return anything;
 }
 
@@ -55,7 +56,7 @@ auto format(const CONT& cont) {
     std::stringstream out;
 
     for (const auto& e: cont) {
-        out << format(e) << ", ";
+        out << std::boolalpha << format(e) << ", ";
     }
 
     out.seekp(-2, std::ios_base::end);
@@ -66,13 +67,9 @@ auto format(const CONT& cont) {
 template<typename ...T>
 requires (requires (T ...x) { ((std::cout << format(x)) , ...); })
 void print(const T& ...things) {
-    auto printer = [](const auto& thing) {
-        std::cout << format(thing);
-    };
-
-    ((printer(things)) , ...);
+    std::cout << std::boolalpha;
+    ((std::cout << format(things)) , ...);
     std::cout << std::endl;
-
 }
 
 namespace types = dhagedorn::types;
@@ -84,10 +81,12 @@ int main() {
     constexpr auto is_mathy = list::any_of<[]<typename T>(){ return std::is_integral_v<T> || std::is_floating_point_v<T>; }>;
     constexpr auto is_not_stringy = list::none_of<[]<typename T>(){ return std::is_same_v<T, std::string>; }>;
     constexpr auto has_int = list::contains<int>;
+    constexpr auto has_int2 = list::any_of<types::trait_predicate<std::is_integral>>;
     using with_string = list::push_back<std::string>;
     using with_void = list::push_front<void>;
     using set = list::set;
     using no_floats = list::filter<[]<typename T>(){ return !std::is_floating_point_v<T>; }>;
+    using no_floats2 = list::filter<types::trait_predicate<std::is_integral>>;
     using odds = list::filter<[]<typename T, auto I, types::is_typelist list>(){ return I%2 == 1; }>;
     using sliced = list::slice<0,3>;
     using first_integral = list::find_if<[]<typename T>(){ return std::is_integral_v<T>; }>;
@@ -108,10 +107,12 @@ int main() {
     print("is_mathy:            ", is_mathy);
     print("is_not_stringy:      ", is_not_stringy);
     print("has_int:             ", has_int);
+    print("has_int2:            ", has_int2);
     print("with_string:         ", typeid(with_string));
     print("with_void:           ", typeid(with_void));
     print("set:                 ", typeid(set));
     print("no_floats:           ", typeid(no_floats));
+    print("no_floats2:          ", typeid(no_floats2));
     print("odds:                ", typeid(odds));
     print("sliced:              ", typeid(sliced));
     print("first_integral:      ", typeid(first_integral));

@@ -82,7 +82,6 @@ struct is_typelist_t<typelist<TYPES...>>: std::true_type {};
 template<typename T>
 concept is_typelist = is_typelist_t<T>::value;
 
-
 /**
  * Invalid type - used to indicate an empty/non-existent type
  * Ex - a typelist<>::find call that does not find a matching type
@@ -95,6 +94,19 @@ struct no_type {};
  */
 template<typename ...TYPES>
 static constexpr auto false_type_v = false;
+
+/**
+ * Convert a type_trait (`#include <type_traits>` or similar)into a predicate function
+ *
+ * ```
+ * using floats = typelist<int, float, double>::filter<trait_predicate<std::is_integral>>
+ * // typelist<float, double>
+ * ```
+ */
+template<template <typename T> class TRAIT>
+constexpr auto trait_predicate = []<typename OTHER, auto...>() {
+    return TRAIT<OTHER>::value;
+};
 
 /**
  * Holds a list of types.  Can perform various compile time computations, generating new
